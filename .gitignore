@@ -1,0 +1,24 @@
+# Local SDKs and downloaded developer tools
+.tools/
+
+# Generated Flutter, Android, and .NET output
+**/build/
+**/.dart_tool/
+**/.gradle/
+**/bin/
+**/obj/
+**/.packages
+.flutter-plugins-dependencies
+
+# Machine-specific IDE and Android settings
+**/local.properties
+**/*.iml
+.idea/
+.vscode/
+
+# Installable packages and logs
+*.apk
+*.aab
+*.log
+.DS_Store
+Thumbs.db
