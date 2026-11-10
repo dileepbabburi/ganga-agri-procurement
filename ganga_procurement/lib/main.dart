@@ -14,6 +14,7 @@ const _ink = Color(0xFF1F3029);
 const _paper = Color(0xFFF5F7F1);
 const _lime = Color(0xFFDDF270);
 const _uuid = Uuid();
+const _cropOptions = ['Maize', 'Paddy', 'Jower', 'Bajra', 'Soyabean'];
 
 void main() => runApp(const GangaApp());
 
@@ -22,7 +23,7 @@ class GangaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Ganga Agri Genetics',
+        title: 'GAG-App',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
@@ -52,14 +53,16 @@ class GangaApp extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.store});
+
+  final LocalStore? store;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  final _store = LocalStore();
+  late final LocalStore _store;
   final _picker = ImagePicker();
   final _phoneController = TextEditingController();
   final _newFarmerNameController = TextEditingController();
@@ -72,6 +75,7 @@ class _HomePageState extends State<HomePage> {
   List<Farmer> _farmers = [];
   List<Weighment> _weighments = [];
   Farmer? _farmer;
+  String? _selectedCrop;
   Uint8List? _slipBytes;
   String _slipName = '';
   bool _loading = true;
@@ -97,6 +101,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _store = widget.store ?? LocalStore();
     _refresh();
   }
 
@@ -125,8 +130,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  String _label(String english, String telugu) =>
-      _telugu ? '$telugu  ·  $english' : '$english  ·  $telugu';
+  String _label(String english, String telugu) => _telugu ? telugu : english;
 
   void _findByMobile(String value) {
     setState(() {
@@ -228,6 +232,7 @@ class _HomePageState extends State<HomePage> {
   void _resetForm() {
     _phoneController.clear();
     _cropController.clear();
+    _selectedCrop = null;
     for (final controller in _weightControllers) {
       controller.dispose();
     }
@@ -253,37 +258,73 @@ class _HomePageState extends State<HomePage> {
     final compact = MediaQuery.sizeOf(context).width < 680;
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 80,
-        titleSpacing: compact ? 18 : 36,
+        toolbarHeight: compact ? 68 : 80,
+        titleSpacing: compact ? 12 : 36,
         title: Row(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(13)),
-              child: const Icon(Icons.grass_rounded, color: _lime),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/gag_logo.jpg',
+                width: compact ? 38 : 46,
+                height: compact ? 38 : 46,
+                fit: BoxFit.cover,
+              ),
             ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('GANGA AGRI GENETICS', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: .7)),
-                Text('Crop procurement', style: TextStyle(fontSize: 12, color: Color(0xFF6C7A72), fontWeight: FontWeight.w400)),
-              ],
+            SizedBox(width: compact ? 8 : 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'GAG-App',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: compact ? 11 : 14, fontWeight: FontWeight.w900, letterSpacing: compact ? .2 : .7),
+                  ),
+                  const Text(
+                    'Ganga Agri Genetics',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6C7A72), fontWeight: FontWeight.w400),
+                  ),
+                ],
+              ),
             ),
-            const Spacer(),
-            _syncPill(),
-            const SizedBox(width: 12),
-            SegmentedButton<bool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: false, label: Text('EN')),
-                ButtonSegment(value: true, label: Text('తె')),
-              ],
-              selected: {_telugu},
-              onSelectionChanged: (value) => setState(() => _telugu = value.first),
-            ),
-            const SizedBox(width: 16),
+            if (compact) ...[
+              const SizedBox(width: 4),
+              PopupMenuButton<bool>(
+                tooltip: 'Choose language',
+                onSelected: (value) => setState(() => _telugu = value),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: false, child: Text('English')),
+                  PopupMenuItem(value: true, child: Text('తెలుగు')),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(_telugu ? 'తె' : 'EN', style: const TextStyle(fontWeight: FontWeight.w800)),
+                    const Icon(Icons.arrow_drop_down_rounded),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ] else ...[
+              const SizedBox(width: 12),
+              _syncPill(),
+              const SizedBox(width: 12),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: false, label: Text('EN')),
+                  ButtonSegment(value: true, label: Text('తె')),
+                ],
+                selected: {_telugu},
+                onSelectionChanged: (value) => setState(() => _telugu = value.first),
+              ),
+              const SizedBox(width: 16),
+            ],
           ],
         ),
       ),
@@ -322,7 +363,7 @@ class _HomePageState extends State<HomePage> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.cloud_off_rounded, size: 15, color: _green),
         const SizedBox(width: 6),
-        Text('$pending pending', style: const TextStyle(color: _green, fontSize: 12, fontWeight: FontWeight.w700)),
+        Text(_label('$pending pending', '$pending పెండింగ్'), style: const TextStyle(color: _green, fontSize: 12, fontWeight: FontWeight.w700)),
       ]),
     );
   }
@@ -332,15 +373,15 @@ class _HomePageState extends State<HomePage> {
         children: [
           _hero(compact),
           const SizedBox(height: 22),
-          _sectionHeader('01', _label('Farmer', 'రైతు'), 'Identify by mobile number'),
+          _sectionHeader('01', _label('Farmer', 'రైతు'), _label('Identify by mobile number', 'మొబైల్ నంబర్‌తో గుర్తించండి')),
           const SizedBox(height: 12),
           _farmerPanel(),
           const SizedBox(height: 22),
-          _sectionHeader('02', _label('Crop and bags', 'పంట మరియు సంచులు'), 'Enter the crop and each bag weight'),
+          _sectionHeader('02', _label('Crop and bags', 'పంట మరియు సంచులు'), _label('Enter the crop and each bag weight', 'పంట పేరు మరియు ప్రతి సంచి బరువును నమోదు చేయండి')),
           const SizedBox(height: 12),
           _bagPanel(compact),
           const SizedBox(height: 22),
-          _sectionHeader('03', _label('Weighment slip', 'తూకం స్లిప్'), 'Take a photo for the record'),
+          _sectionHeader('03', _label('Weighment slip', 'తూకం స్లిప్'), _label('Take a photo for the record', 'రికార్డు కోసం ఫోటో తీయండి')),
           const SizedBox(height: 12),
           _photoPanel(),
           const SizedBox(height: 20),
@@ -504,19 +545,25 @@ class _HomePageState extends State<HomePage> {
 
   Widget _bagPanel(bool compact) => _panel(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(
-            controller: _cropController,
-            textCapitalization: TextCapitalization.words,
+          DropdownButtonFormField<String>(
+            key: ValueKey(_selectedCrop),
+            initialValue: _selectedCrop,
             decoration: InputDecoration(
               labelText: _label('Crop name', 'పంట పేరు'),
-              hintText: _label('For example, maize', 'ఉదాహరణకు, మొక్కజొన్న'),
               prefixIcon: const Icon(Icons.grain_rounded),
             ),
+            items: _cropOptions
+                .map((crop) => DropdownMenuItem(value: crop, child: Text(crop)))
+                .toList(),
+            onChanged: (crop) => setState(() {
+              _selectedCrop = crop;
+              _cropController.text = crop ?? '';
+            }),
           ),
           const SizedBox(height: 18),
           Row(children: [
             Expanded(child: Text(_label('Bag weights', 'సంచుల బరువులు'), style: const TextStyle(fontWeight: FontWeight.w800, color: _ink))),
-            Text('${_weightControllers.length} bags', style: const TextStyle(fontSize: 12, color: Color(0xFF738078))),
+            Text(_label('${_weightControllers.length} bags', '${_weightControllers.length} సంచులు'), style: const TextStyle(fontSize: 12, color: Color(0xFF738078))),
           ]),
           const SizedBox(height: 9),
           ...List.generate(_weightControllers.length, (index) => Padding(
@@ -635,9 +682,9 @@ class _HomePageState extends State<HomePage> {
         ]),
         const SizedBox(height: 18),
         Wrap(spacing: 10, runSpacing: 10, children: [
-          _metric('Weighments', '${_weighments.length}', Icons.receipt_long_outlined),
-          _metric('Gross kg', totalKg.toStringAsFixed(2), Icons.scale_outlined),
-          _metric('Pending sync', '$pending', Icons.cloud_upload_outlined),
+          _metric(_label('Weighments', 'తూకాలు'), '${_weighments.length}', Icons.receipt_long_outlined),
+          _metric(_label('Gross kg', 'మొత్తం కిలోలు'), totalKg.toStringAsFixed(2), Icons.scale_outlined),
+          _metric(_label('Pending sync', 'సింక్ పెండింగ్'), '$pending', Icons.cloud_upload_outlined),
         ]),
         const SizedBox(height: 17),
         TextField(
@@ -697,14 +744,14 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(width: 13),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(item.farmerName, style: const TextStyle(fontWeight: FontWeight.w800, color: _ink)),
-              Text('${item.farmerMobile}  ·  ${item.crop}  ·  ${item.bagCount} bags', style: const TextStyle(fontSize: 11, color: Color(0xFF738078))),
+              Text('${item.farmerMobile}  ·  ${item.crop}  ·  ${_label('${item.bagCount} bags', '${item.bagCount} సంచులు')}', style: const TextStyle(fontSize: 11, color: Color(0xFF738078))),
               const SizedBox(height: 4),
               Text(_formatDate(item.createdAt), style: const TextStyle(fontSize: 10, color: Color(0xFF89948D))),
             ])),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text('${item.grossWeightKg.toStringAsFixed(2)} kg', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: _green)),
               const SizedBox(height: 5),
-              Text('${item.approvedByRole == 'worker' ? 'Worker approved' : item.approvedByRole}  ·  ${item.synced ? 'Synced' : 'Pending sync'}', style: TextStyle(fontSize: 10, color: item.synced ? _green : const Color(0xFF9A6A22), fontWeight: FontWeight.w700)),
+              Text('${item.approvedByRole == 'worker' ? _label('Worker approved', 'కార్మికుడు ఆమోదించారు') : item.approvedByRole}  ·  ${item.synced ? _label('Synced', 'సింక్ అయింది') : _label('Pending sync', 'సింక్ పెండింగ్')}', style: TextStyle(fontSize: 10, color: item.synced ? _green : const Color(0xFF9A6A22), fontWeight: FontWeight.w700)),
             ]),
           ]),
         ),
