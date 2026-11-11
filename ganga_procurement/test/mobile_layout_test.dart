@@ -62,4 +62,46 @@ void main() {
     expect(find.text('Jower'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('calculates payment for gross weight, bag count, and AR', (tester) async {
+    await pumpAtPhoneWidth(tester);
+
+    final cropDropdown = find.byType(DropdownButtonFormField<String>);
+    await tester.ensureVisible(cropDropdown);
+    await tester.tap(cropDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maize').last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'crop selection');
+    final grossMode = find.byKey(const ValueKey('gross-weight-mode'));
+    await tester.ensureVisible(grossMode);
+    await tester.tap(grossMode);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'weight mode selection');
+
+    await tester.ensureVisible(find.byKey(const ValueKey('total-bags-input')));
+    await tester.enterText(find.byKey(const ValueKey('total-bags-input')), '56');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'bag count entry');
+    await tester.ensureVisible(find.byKey(const ValueKey('gross-weight-input')));
+    await tester.enterText(find.byKey(const ValueKey('gross-weight-input')), '3270');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'gross weight entry');
+    await tester.ensureVisible(find.byKey(const ValueKey('rate-per-quintal-input')));
+    await tester.enterText(find.byKey(const ValueKey('rate-per-quintal-input')), '2500');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'rate entry');
+
+    await tester.ensureVisible(find.text('Final payable to farmer'));
+    expect(find.text('₹78,183.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final hrChoice = find.byKey(const ValueKey('hr-receipt-choice'));
+    await tester.ensureVisible(hrChoice);
+    await tester.tap(hrChoice);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Final payable to farmer'));
+    expect(find.text('₹77,623.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

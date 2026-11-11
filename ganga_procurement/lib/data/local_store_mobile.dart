@@ -15,7 +15,7 @@ class _SqliteLocalStore implements LocalStore {
     final directory = await getApplicationDocumentsDirectory();
     _database = await openDatabase(
       path.join(directory.path, 'ganga_procurement.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE farmers (
@@ -34,6 +34,14 @@ class _SqliteLocalStore implements LocalStore {
             crop TEXT NOT NULL,
             bagWeights TEXT NOT NULL,
             grossWeightKg REAL NOT NULL,
+            bagCount INTEGER NOT NULL DEFAULT 0,
+            weightEntryMode TEXT NOT NULL DEFAULT 'individual',
+            gunnyPerBagKg REAL NOT NULL DEFAULT 0,
+            kadthaKg REAL NOT NULL DEFAULT 0,
+            ratePerQuintal REAL NOT NULL DEFAULT 0,
+            interestRatePercent REAL NOT NULL DEFAULT 0,
+            receiptType TEXT NOT NULL DEFAULT '',
+            receiptPerBag REAL NOT NULL DEFAULT 0,
             createdAt TEXT NOT NULL,
             approvedByRole TEXT NOT NULL DEFAULT 'worker',
             slipPhotoBase64 TEXT,
@@ -51,6 +59,32 @@ class _SqliteLocalStore implements LocalStore {
         if (oldVersion < 2) {
           await db.execute(
             "ALTER TABLE weighments ADD COLUMN approvedByRole TEXT NOT NULL DEFAULT 'worker'",
+          );
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN bagCount INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            "ALTER TABLE weighments ADD COLUMN weightEntryMode TEXT NOT NULL DEFAULT 'individual'",
+          );
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN gunnyPerBagKg REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN kadthaKg REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN ratePerQuintal REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN interestRatePercent REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            "ALTER TABLE weighments ADD COLUMN receiptType TEXT NOT NULL DEFAULT ''",
+          );
+          await db.execute(
+            'ALTER TABLE weighments ADD COLUMN receiptPerBag REAL NOT NULL DEFAULT 0',
           );
         }
       },

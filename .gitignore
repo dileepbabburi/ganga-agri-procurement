@@ -22,3 +22,13 @@
 *.log
 .DS_Store
 Thumbs.db
+# Local Gradle caches and temporary build environments
+.gradle-cache/
+gradle-91-cache/
+gradle-91-test/
+gradle-clean-test/
+gradle-dsl-test/
+temp/
+
+# Local backup files
+*.backup

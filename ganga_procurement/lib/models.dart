@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:convert';
 
 class Farmer {
@@ -37,10 +39,20 @@ class Weighment {
     required this.crop,
     required this.bagWeights,
     required this.createdAt,
+    double? grossWeightKg,
+    int? bagCount,
+    this.weightEntryMode = 'individual',
+    this.gunnyPerBagKg = 0,
+    this.kadthaKg = 0,
+    this.ratePerQuintal = 0,
+    this.interestRatePercent = 0,
+    this.receiptType = '',
+    this.receiptPerBag = 0,
     this.approvedByRole = 'worker',
     this.slipPhotoBase64,
     this.synced = false,
-  });
+  })  : _grossWeightKg = grossWeightKg,
+        _bagCount = bagCount;
 
   final String id;
   final String farmerId;
@@ -49,12 +61,28 @@ class Weighment {
   final String crop;
   final List<double> bagWeights;
   final DateTime createdAt;
+  final double? _grossWeightKg;
+  final int? _bagCount;
+  final String weightEntryMode;
+  final double gunnyPerBagKg;
+  final double kadthaKg;
+  final double ratePerQuintal;
+  final double interestRatePercent;
+  final String receiptType;
+  final double receiptPerBag;
   final String approvedByRole;
   final String? slipPhotoBase64;
   final bool synced;
 
-  double get grossWeightKg => bagWeights.fold(0, (sum, weight) => sum + weight);
-  int get bagCount => bagWeights.length;
+  double get grossWeightKg =>
+      _grossWeightKg ?? bagWeights.fold(0, (sum, weight) => sum + weight);
+  int get bagCount => (_bagCount ?? 0) > 0 ? _bagCount! : bagWeights.length;
+  double get gunnyDeductionKg => bagCount * gunnyPerBagKg;
+  double get goodSeedWeightKg => grossWeightKg - gunnyDeductionKg - kadthaKg;
+  double get grossPayment => goodSeedWeightKg / 100 * ratePerQuintal;
+  double get interestAmount => grossPayment * interestRatePercent / 100;
+  double get receiptTotal => bagCount * receiptPerBag;
+  double get finalPayable => grossPayment - interestAmount - receiptTotal;
 
   Map<String, Object?> toMap() => {
         'id': id,
@@ -64,6 +92,14 @@ class Weighment {
         'crop': crop,
         'bagWeights': jsonEncode(bagWeights),
         'grossWeightKg': grossWeightKg,
+        'bagCount': bagCount,
+        'weightEntryMode': weightEntryMode,
+        'gunnyPerBagKg': gunnyPerBagKg,
+        'kadthaKg': kadthaKg,
+        'ratePerQuintal': ratePerQuintal,
+        'interestRatePercent': interestRatePercent,
+        'receiptType': receiptType,
+        'receiptPerBag': receiptPerBag,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'approvedByRole': approvedByRole,
         'slipPhotoBase64': slipPhotoBase64,
@@ -80,6 +116,16 @@ class Weighment {
             .map((value) => (value as num).toDouble())
             .toList(),
         createdAt: DateTime.parse(map['createdAt']! as String),
+        grossWeightKg: (map['grossWeightKg'] as num?)?.toDouble(),
+        bagCount: (map['bagCount'] as num?)?.toInt(),
+        weightEntryMode: map['weightEntryMode'] as String? ?? 'individual',
+        gunnyPerBagKg: (map['gunnyPerBagKg'] as num?)?.toDouble() ?? 0,
+        kadthaKg: (map['kadthaKg'] as num?)?.toDouble() ?? 0,
+        ratePerQuintal: (map['ratePerQuintal'] as num?)?.toDouble() ?? 0,
+        interestRatePercent:
+            (map['interestRatePercent'] as num?)?.toDouble() ?? 0,
+        receiptType: map['receiptType'] as String? ?? '',
+        receiptPerBag: (map['receiptPerBag'] as num?)?.toDouble() ?? 0,
         approvedByRole: map['approvedByRole'] as String? ?? 'worker',
         slipPhotoBase64: map['slipPhotoBase64'] as String?,
         synced: (map['synced'] as int? ?? 0) == 1,
