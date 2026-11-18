@@ -117,7 +117,9 @@ class _HomePageState extends State<HomePage> {
     final values = _weightControllers
         .map((controller) => double.tryParse(controller.text.trim()))
         .toList();
-    if (values.any((value) => value == null || value <= 0)) return null;
+    if (values.any((value) => value == null || !value.isFinite || value <= 0)) {
+      return null;
+    }
     return values.cast<double>();
   }
 
@@ -340,93 +342,100 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _saveWeighment() async {
-    final farmer = _farmer;
-    final crop = _selectedCrop;
+  String? _weighmentValidationMessage() {
+    if (_farmer == null) {
+      return 'Find and select a farmer by mobile number first.';
+    }
+    if (_selectedCrop == null) {
+      return _label('Select a crop name.', 'పంట పేరును ఎంచుకోండి.');
+    }
     final bags = _bagCount;
+    if (bags == null) {
+      return _label(
+        'Enter a bag count from 1 to 500.',
+        '1 నుండి 500 వరకు సంచుల సంఖ్య నమోదు చేయండి.',
+      );
+    }
     final grossWeight = _grossWeight;
-    final kadtha = _kadthaKg;
-    final rate = _ratePerQuintal;
-    final interestRate = _interestRatePercent;
-    final receiptRate = _receiptPerBag;
     final weights = _weightEntryMode == _WeightEntryMode.individualBags
         ? _enteredBagWeights
         : <double>[];
-    if (farmer == null) {
-      _message('Find and select a farmer by mobile number first.');
-      return;
-    }
-    if (crop == null) {
-      _message(_label('Select a crop name.', 'పంట పేరును ఎంచుకోండి.'));
-      return;
-    }
-    if (bags == null) {
-      _message(
-        _label(
-          'Enter a bag count from 1 to 500.',
-          '1 నుండి 500 వరకు సంచుల సంఖ్య నమోదు చేయండి.',
-        ),
+    if (grossWeight == null ||
+        !grossWeight.isFinite ||
+        grossWeight <= 0 ||
+        weights == null) {
+      return _label(
+        'Enter a valid gross weight.',
+        'చెల్లుబాటు అయ్యే స్థూల బరువును నమోదు చేయండి.',
       );
-      return;
     }
-    if (grossWeight == null || grossWeight <= 0 || weights == null) {
-      _message(
-        _label(
-          'Enter a valid gross weight.',
-          'చెల్లుబాటు అయ్యే స్థూల బరువును నమోదు చేయండి.',
-        ),
+    final kadtha = _kadthaKg;
+    if (kadtha == null || !kadtha.isFinite) {
+      return _label(
+        'Kadtha must be zero or more kilograms.',
+        'కడ్తా సున్నా లేదా అంతకంటే ఎక్కువ కిలోలు ఉండాలి.',
       );
-      return;
     }
-    if (kadtha == null) {
-      _message(
-        _label(
-          'Kadtha must be zero or more kilograms.',
-          'కడ్తా సున్నా లేదా అంతకంటే ఎక్కువ కిలోలు ఉండాలి.',
-        ),
+    final rate = _ratePerQuintal;
+    if (rate == null || !rate.isFinite) {
+      return _label(
+        'Enter a rate greater than zero per quintal.',
+        'క్వింటాల్‌కు సున్నా కంటే ఎక్కువ ధర నమోదు చేయండి.',
       );
-      return;
     }
-    if (rate == null) {
-      _message(
-        _label(
-          'Enter a rate greater than zero per quintal.',
-          'క్వింటాల్‌కు సున్నా కంటే ఎక్కువ ధర నమోదు చేయండి.',
-        ),
+    final interestRate = _interestRatePercent;
+    final receiptRate = _receiptPerBag;
+    if (interestRate == null ||
+        !interestRate.isFinite ||
+        receiptRate == null ||
+        !receiptRate.isFinite) {
+      return _label(
+        'Check the interest and receipt amounts.',
+        'వడ్డీ మరియు రసీదు మొత్తాలను తనిఖీ చేయండి.',
       );
-      return;
-    }
-    if (interestRate == null || receiptRate == null) {
-      _message(
-        _label(
-          'Check the interest and receipt amounts.',
-          'వడ్డీ మరియు రసీదు మొత్తాలను తనిఖీ చేయండి.',
-        ),
-      );
-      return;
     }
     final goodSeedWeight = grossWeight - bags - kadtha;
     if (goodSeedWeight <= 0) {
-      _message(
-        _label(
-          'Deductions must be less than gross weight.',
-          'తగ్గింపులు స్థూల బరువు కంటే తక్కువగా ఉండాలి.',
-        ),
+      return _label(
+        'Deductions must be less than gross weight.',
+        'తగ్గింపులు స్థూల బరువు కంటే తక్కువగా ఉండాలి.',
       );
+    }
+    final payable = _finalPayable;
+    if (payable == null || !payable.isFinite) {
+      return _label(
+        'Complete the weighment and payment details first.',
+        'ముందుగా తూకం మరియు చెల్లింపు వివరాలు పూర్తి చేయండి.',
+      );
+    }
+    if (payable < 0) {
+      return _label(
+        'Deductions cannot exceed the gross payment.',
+        'తగ్గింపులు స్థూల చెల్లింపును మించకూడదు.',
+      );
+    }
+    return null;
+  }
+
+  bool get _canExportWeighment => _weighmentValidationMessage() == null;
+
+  Future<void> _saveWeighment() async {
+    final validationMessage = _weighmentValidationMessage();
+    if (validationMessage != null) {
+      _message(validationMessage);
       return;
     }
-    final grossPayment = goodSeedWeight / 100 * rate;
-    final interestAmount = grossPayment * interestRate / 100;
-    final receiptTotal = bags * receiptRate;
-    if (grossPayment - interestAmount - receiptTotal < 0) {
-      _message(
-        _label(
-          'Deductions cannot exceed the gross payment.',
-          'తగ్గింపులు స్థూల చెల్లింపును మించకూడదు.',
-        ),
-      );
-      return;
-    }
+    final farmer = _farmer!;
+    final crop = _selectedCrop!;
+    final bags = _bagCount!;
+    final grossWeight = _grossWeight!;
+    final kadtha = _kadthaKg!;
+    final rate = _ratePerQuintal!;
+    final interestRate = _interestRatePercent!;
+    final receiptRate = _receiptPerBag!;
+    final weights = _weightEntryMode == _WeightEntryMode.individualBags
+        ? _enteredBagWeights!
+        : <double>[];
     setState(() => _saving = true);
     final record = Weighment(
       id: _uuid.v4(),
@@ -465,37 +474,63 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportWeighmentPdf() async {
-    final farmer = _farmer;
-    final crop = _selectedCrop;
-    final bags = _bagCount;
-    final gross = _grossWeight;
-    final goodSeed = _goodSeedWeightKg;
-    final rate = _ratePerQuintal;
-    final grossPayment = _grossPayment;
-    final interest = _interestAmount;
-    final receipt = _receiptTotal;
-    final payable = _finalPayable;
-    if (farmer == null ||
-        crop == null ||
-        bags == null ||
-        gross == null ||
-        goodSeed == null ||
-        rate == null ||
-        grossPayment == null ||
-        interest == null ||
-        receipt == null ||
-        payable == null) {
-      _message(
-        _label(
-          'Complete the farmer, crop, weight, and rate fields to export.',
-          'ఎగుమతి చేయడానికి రైతు, పంట, బరువు మరియు ధర వివరాలు పూర్తి చేయండి.',
-        ),
-      );
+    final validationMessage = _weighmentValidationMessage();
+    if (validationMessage != null) {
+      _message(validationMessage);
       return;
     }
+    final farmer = _farmer!;
+    final crop = _selectedCrop!;
+    final bags = _bagCount!;
+    final gross = _grossWeight!;
+    final goodSeed = _goodSeedWeightKg!;
+    final rate = _ratePerQuintal!;
+    final grossPayment = _grossPayment!;
+    final interest = _interestAmount!;
+    final receipt = _receiptTotal!;
+    final payable = _finalPayable!;
+    final bagWeights = _weightEntryMode == _WeightEntryMode.individualBags
+        ? _enteredBagWeights!
+        : const <double>[];
     final doc = pw.Document();
     final createdAt = DateTime.now();
     String money(double value) => _formatMoney(value).replaceAll('₹', 'INR ');
+    final rows = <List<String>>[
+      ['Farmer', farmer.name],
+      ['Mobile', farmer.mobile],
+      ['Crop', crop],
+      ['Total bags', '$bags'],
+      [
+        'Weight entry method',
+        _weightEntryMode == _WeightEntryMode.individualBags
+            ? 'Individual bag weights'
+            : 'Total gross weight',
+      ],
+      ['Gross weight', '${gross.toStringAsFixed(2)} kg'],
+      ['Less gunny (1 kg per bag)', '${bags.toStringAsFixed(2)} kg'],
+      ['Less Kadtha', '${_kadthaKg!.toStringAsFixed(2)} kg'],
+      ['Good seed', '${goodSeed.toStringAsFixed(2)} kg'],
+      ['Rate per quintal', money(rate)],
+      ['Gross total payment', money(grossPayment)],
+      [
+        'Advance interest (${_interestRateController.text}%)',
+        '- ${money(interest)}',
+      ],
+      [
+        'Less $_receiptType (${money(_receiptPerBag!)} per bag)',
+        '- ${money(receipt)}',
+      ],
+      ['FINAL PAYABLE TO FARMER', money(payable)],
+    ];
+    if (bagWeights.isNotEmpty) {
+      rows.insert(5, ['Individual bag weights', '']);
+      for (var index = 0; index < bagWeights.length; index++) {
+        rows.insert(6 + index, [
+          'Bag ${index + 1}',
+          '${bagWeights[index].toStringAsFixed(2)} kg',
+        ]);
+      }
+    }
     doc.addPage(
       pw.MultiPage(
         build: (_) => [
@@ -505,38 +540,37 @@ class _HomePageState extends State<HomePage> {
           ),
           pw.Text('Date: ${createdAt.toLocal()}'),
           pw.SizedBox(height: 12),
-          pw.TableHelper.fromTextArray(
-            data: [
-              ['Farmer', farmer.name],
-              ['Mobile', farmer.mobile],
-              ['Crop', crop],
-              ['Total bags', '$bags'],
-              ['Gross weight', '${gross.toStringAsFixed(2)} kg'],
-              ['Less gunny (1 kg per bag)', '${bags.toStringAsFixed(2)} kg'],
-              ['Less Kadtha', '${(_kadthaKg ?? 0).toStringAsFixed(2)} kg'],
-              ['Good seed', '${goodSeed.toStringAsFixed(2)} kg'],
-              ['Rate per quintal', money(rate)],
-              ['Gross total payment', money(grossPayment)],
-              [
-                'Advance interest (${_interestRateController.text}%)',
-                '- ${money(interest)}',
-              ],
-              [
-                'Less $_receiptType (${money(_receiptPerBag ?? 0)} per bag)',
-                '- ${money(receipt)}',
-              ],
-              ['FINAL PAYABLE TO FARMER', money(payable)],
-            ],
-          ),
+          pw.TableHelper.fromTextArray(data: rows),
+          if (_slipBytes != null) ...[
+            pw.SizedBox(height: 18),
+            pw.Header(
+              level: 1,
+              child: pw.Text('Original weighment slip photo'),
+            ),
+            pw.Image(
+              pw.MemoryImage(_slipBytes!),
+              height: 320,
+              fit: pw.BoxFit.contain,
+            ),
+          ],
           pw.SizedBox(height: 24),
           pw.Text('Worker approval: ____________________'),
         ],
       ),
     );
-    await Printing.layoutPdf(
-      name: 'GAG-Weighment-${createdAt.millisecondsSinceEpoch}.pdf',
-      onLayout: (_) async => doc.save(),
-    );
+    try {
+      await Printing.layoutPdf(
+        name: 'GAG-Weighment-${createdAt.millisecondsSinceEpoch}.pdf',
+        onLayout: (_) async => doc.save(),
+      );
+    } catch (_) {
+      _message(
+        _label(
+          'Could not open the PDF save window. Please try again.',
+          'PDF సేవ్ విండో తెరవడం సాధ్యం కాలేదు. మళ్లీ ప్రయత్నించండి.',
+        ),
+      );
+    }
   }
 
   void _resetForm() {
@@ -1352,7 +1386,7 @@ class _HomePageState extends State<HomePage> {
         _calculationSummary(),
         const SizedBox(height: 14),
         OutlinedButton.icon(
-          onPressed: _finalPayable == null ? null : _exportWeighmentPdf,
+          onPressed: _canExportWeighment ? _exportWeighmentPdf : null,
           icon: const Icon(Icons.picture_as_pdf_outlined),
           label: Text(
             _label(
