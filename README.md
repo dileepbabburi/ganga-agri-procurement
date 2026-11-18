@@ -2,6 +2,10 @@
 
 A first-stage offline-first crop procurement and weighment app for Android, built with Flutter and Dart. It includes a Telugu/English interface, mobile-number farmer lookup, manual bag-by-bag weighing, slip photo capture, offline saving, and CSV export.
 
+## Download the Android app
+
+[Download the GAG-App 1.0.5 debug APK](https://github.com/dileepbabburi/ganga-agri-procurement/releases/download/v1.0.5-debug/GAG-App-v1.0.5-debug.apk) from GitHub Releases.
+
 ## Free tools and current setup
 
 - Flutter and Dart for the mobile app.
@@ -31,7 +35,7 @@ Open PowerShell in `ganga_procurement` and run:
 
 ## Build the Android debug APK
 
-From the app folder, use the Flutter SDK in `.tools/` and the Android SDK configured for this computer. The generated APK is written under `ganga_procurement/build/app/outputs/flutter-apk/`; that build output is excluded from GitHub.
+From the app folder, use the Flutter SDK in `.tools/` and the Android SDK configured for this computer. The generated APK is written under `ganga_procurement/build/app/outputs/flutter-apk/`; that build output is excluded from Git history. The installable APK is attached to the GitHub release above.
 
 ## Repository contents
 
