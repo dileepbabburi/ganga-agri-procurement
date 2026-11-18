@@ -4,7 +4,7 @@ A first-stage offline-first crop procurement and weighment app for Android, buil
 
 ## Download the Android app
 
-[Download the GAG-App 1.0.5 debug APK](https://github.com/dileepbabburi/ganga-agri-procurement/releases/download/v1.0.5-debug/GAG-App-v1.0.5-debug.apk) from GitHub Releases.
+[Download the GAG-App 1.0.5 debug APK](https://github.com/dileepbabburi/ganga-agri-procurement/releases/download/v1.0.5-debug/app-debug.apk) from GitHub Releases.
 
 ## Free tools and current setup
 
