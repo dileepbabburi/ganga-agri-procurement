@@ -15,13 +15,13 @@ class _SqliteLocalStore implements LocalStore {
     final directory = await getApplicationDocumentsDirectory();
     _database = await openDatabase(
       path.join(directory.path, 'ganga_procurement.db'),
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE farmers (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            mobile TEXT NOT NULL UNIQUE,
+            mobile TEXT NOT NULL DEFAULT '',
             village TEXT NOT NULL DEFAULT ''
           )
         ''');
@@ -87,6 +87,24 @@ class _SqliteLocalStore implements LocalStore {
             'ALTER TABLE weighments ADD COLUMN receiptPerBag REAL NOT NULL DEFAULT 0',
           );
         }
+        if (oldVersion < 4) {
+          // Farmer mobile numbers are optional. Recreate the table without
+          // UNIQUE so several farmers can legitimately have no phone number.
+          await db.execute('''
+            CREATE TABLE farmers_new (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              mobile TEXT NOT NULL DEFAULT '',
+              village TEXT NOT NULL DEFAULT ''
+            )
+          ''');
+          await db.execute('''
+            INSERT INTO farmers_new (id, name, mobile, village)
+            SELECT id, name, mobile, village FROM farmers
+          ''');
+          await db.execute('DROP TABLE farmers');
+          await db.execute('ALTER TABLE farmers_new RENAME TO farmers');
+        }
       },
     );
     return _database!;
@@ -94,7 +112,10 @@ class _SqliteLocalStore implements LocalStore {
 
   @override
   Future<List<Farmer>> farmers() async {
-    final rows = await (await database).query('farmers', orderBy: 'name COLLATE NOCASE');
+    final rows = await (await database).query(
+      'farmers',
+      orderBy: 'name COLLATE NOCASE',
+    );
     return rows.map(Farmer.fromMap).toList();
   }
 
@@ -109,7 +130,10 @@ class _SqliteLocalStore implements LocalStore {
 
   @override
   Future<List<Weighment>> weighments() async {
-    final rows = await (await database).query('weighments', orderBy: 'createdAt DESC');
+    final rows = await (await database).query(
+      'weighments',
+      orderBy: 'createdAt DESC',
+    );
     return rows.map(Weighment.fromMap).toList();
   }
 

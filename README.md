@@ -17,7 +17,9 @@ The Android SDK, Java, Flutter SDK, .NET SDK, Gradle cache, and other downloaded
 - Weighments are saved on the device. The pending-sync label is local only; API sync is not implemented yet.
 - The API is still a starter scaffold. SQL Server schema, connection setup, batch sync, and the office web view are not implemented yet.
 - Worker login and individual worker identity are not implemented.
-- Commercial deductions, rates, and payment rules are intentionally not implemented.
+- Slip OCR runs offline on Android. **Fill entries** can apply conservative suggestions for labelled farmer name/mobile, crop, bag count, rate, and numbered bag-weight rows. These remain editable and require worker review; unclear or missing values must be entered manually. Mobile is optional and farmer name is required.
+- The browser preview remains manual-entry only for OCR.
+- The app calculates the configured rate, interest, Kadtha, and AR/HR deductions and shows final payable; actual farmer payments are not issued or reconciled.
 
 ## Run the web preview
 

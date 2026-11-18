@@ -7,8 +7,13 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 
+import 'data/slip_ocr_stub.dart'
+    if (dart.library.io) 'data/slip_ocr_native.dart'
+    as slip_ocr;
+
 import 'data/export_csv.dart';
 import 'data/local_store.dart';
+import 'data/slip_field_extractor.dart';
 import 'models.dart';
 
 const _green = Color(0xFF145A42);
@@ -97,10 +102,15 @@ class _HomePageState extends State<HomePage> {
   String _receiptType = 'AR';
   Uint8List? _slipBytes;
   String _slipName = '';
+  String _ocrText = '';
+  String _ocrError = '';
+  SlipDraft? _slipDraft;
+  bool _ocrRunning = false;
   bool _loading = true;
   bool _saving = false;
   bool _addingFarmer = false;
   bool _telugu = false;
+  int _ocrGeneration = 0;
   int _tab = 0;
 
   int? get _bagCount {
@@ -197,7 +207,11 @@ class _HomePageState extends State<HomePage> {
     final query = _phoneController.text.trim();
     if (query.isEmpty || _farmer != null) return const [];
     return _farmers
-        .where((farmer) => farmer.mobile.contains(query))
+        .where(
+          (farmer) =>
+              farmer.mobile.contains(query) ||
+              farmer.name.toLowerCase().contains(query.toLowerCase()),
+        )
         .take(5)
         .toList();
   }
@@ -250,9 +264,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _addFarmer() {
-    _newFarmerNameController.clear();
-    _newFarmerMobileController.text = _phoneController.text.trim();
-    _newFarmerVillageController.clear();
+    _newFarmerNameController.text = _farmer?.name ?? '';
+    _newFarmerMobileController.text =
+        _farmer?.mobile ?? _phoneController.text.trim();
+    _newFarmerVillageController.text = _farmer?.village ?? '';
     setState(() => _addingFarmer = true);
   }
 
@@ -262,8 +277,16 @@ class _HomePageState extends State<HomePage> {
       RegExp(r'\D'),
       '',
     );
+    if (digits.isNotEmpty && (digits.length < 10 || digits.length > 15)) {
+      _message('Enter a valid mobile number or leave it blank.');
+      return;
+    }
     final existing = _farmers
-        .where((item) => item.mobile == digits)
+        .where(
+          (item) =>
+              item.id == _farmer?.id ||
+              (digits.isNotEmpty && item.mobile == digits),
+        )
         .firstOrNull;
     final farmer =
         existing ??
@@ -276,21 +299,22 @@ class _HomePageState extends State<HomePage> {
     if (existing == null) await _store.saveFarmer(farmer);
     await _refresh();
     if (!mounted) return;
-    _phoneController.text = farmer.mobile;
+    _phoneController.text = farmer.mobile.isEmpty ? farmer.name : farmer.mobile;
     setState(() {
       _farmer = farmer;
       _addingFarmer = false;
     });
   }
 
-  Future<void> _pickSlip() async {
+  Future<void> _pickSlip([ImageSource source = ImageSource.camera]) async {
     try {
       final file = await _picker.pickImage(
-        source: ImageSource.camera,
+        source: source,
         imageQuality: 65,
         maxWidth: 1400,
       );
       if (file == null) return;
+      final generation = ++_ocrGeneration;
       final bytes = await file.readAsBytes();
       if (bytes.length > 2 * 1024 * 1024) {
         _message('That photo is too large. Please take it again.');
@@ -299,12 +323,135 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _slipBytes = bytes;
         _slipName = file.name;
+        _ocrText = '';
+        _ocrError = '';
+        _slipDraft = null;
       });
+      await _recognizeSlip(file.path, generation);
     } catch (_) {
       _message(
         'Could not open the camera. Check camera permission and try again.',
       );
     }
+  }
+
+  void _removeSlipPhoto() {
+    _ocrGeneration++;
+    setState(() {
+      _slipBytes = null;
+      _slipName = '';
+      _ocrText = '';
+      _ocrError = '';
+      _slipDraft = null;
+      _ocrRunning = false;
+    });
+  }
+
+  Future<void> _recognizeSlip(String imagePath, int generation) async {
+    if (!slip_ocr.isAvailable || imagePath.isEmpty) {
+      setState(() {
+        _ocrError = _label(
+          'On-device slip reading is available in the Android app.',
+          'ఆఫ్‌లైన్ స్లిప్ చదవడం Android యాప్‌లో అందుబాటులో ఉంది.',
+        );
+      });
+      return;
+    }
+
+    setState(() {
+      _ocrRunning = true;
+      _ocrError = '';
+    });
+    try {
+      final text = await slip_ocr.extractText(imagePath);
+      if (!mounted || generation != _ocrGeneration) return;
+      final draft = extractSlipDraft(text);
+      setState(() {
+        _ocrText = text.trim();
+        _ocrRunning = false;
+        _slipDraft = draft.hasSuggestions ? draft : null;
+        if (_ocrText.isEmpty) {
+          _ocrError = _label(
+            'No text was recognized. Please enter the details manually.',
+            'వచనం గుర్తించబడలేదు. వివరాలను చేతితో నమోదు చేయండి.',
+          );
+        }
+      });
+      if (!draft.hasSuggestions && _ocrText.isNotEmpty) {
+        setState(() {
+          _ocrError = _label(
+            'Text was read, but no fields could be identified confidently. Enter details manually.',
+            'వచనం చదివాం, కానీ వివరాలను ఖచ్చితంగా గుర్తించలేకపోయాం. చేతితో నమోదు చేయండి.',
+          );
+        });
+      }
+    } catch (_) {
+      if (!mounted || generation != _ocrGeneration) return;
+      setState(() {
+        _ocrRunning = false;
+        _ocrError = _label(
+          'Could not read this slip. Please enter the details manually.',
+          'ఈ స్లిప్ చదవలేకపోయాం. వివరాలను చేతితో నమోదు చేయండి.',
+        );
+      });
+    }
+  }
+
+  void _applySlipDraft(SlipDraft draft) {
+    if (!draft.hasSuggestions) {
+      _message(
+        'No fields could be confidently suggested. Please enter them manually.',
+      );
+      return;
+    }
+    if (draft.mobile != null) _phoneController.text = draft.mobile!;
+    if (draft.farmerName != null) {
+      _newFarmerNameController.text = draft.farmerName!;
+    }
+    if (draft.mobile != null) _newFarmerMobileController.text = draft.mobile!;
+    if (draft.farmerName != null) {
+      final matched = draft.mobile == null
+          ? null
+          : _farmers
+                .where((farmer) => farmer.mobile == draft.mobile)
+                .firstOrNull;
+      _farmer = matched;
+      _newFarmerVillageController.text =
+          draft.village ?? matched?.village ?? '';
+      _addingFarmer = true;
+    } else if (draft.mobile != null) {
+      _farmer = _farmers
+          .where((farmer) => farmer.mobile == draft.mobile)
+          .firstOrNull;
+    }
+    if (draft.crop != null && _cropOptions.contains(draft.crop)) {
+      _selectedCrop = draft.crop;
+    }
+    final count = draft.bagCount;
+    if (count != null && count > 0 && count <= 500) {
+      _totalBagsController.text = '$count';
+      _onBagCountChanged('$count');
+      if (draft.bagWeights.isNotEmpty) {
+        _weightEntryMode = _WeightEntryMode.individualBags;
+        for (var i = 0; i < count; i++) {
+          _weightControllers[i].text = i < draft.bagWeights.length
+              ? draft.bagWeights[i].toString()
+              : '';
+        }
+      }
+    }
+    if (draft.rate != null) {
+      _rateController.text = draft.rate!.toStringAsFixed(2);
+    }
+    setState(() {});
+    final countNote = count == null
+        ? 'Bag count needs entry.'
+        : (draft.bagWeights.length == count
+              ? 'All $count weights suggested.'
+              : '${draft.bagWeights.length} of $count bag weights suggested; fill the rest.');
+    _message(
+      'Slip suggestions filled. Review farmer, $countNote Rate and crop are editable.',
+    );
   }
 
   void _onBagCountChanged(String value) {
@@ -574,6 +721,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _resetForm() {
+    _ocrGeneration++;
     _phoneController.clear();
     _totalBagsController.clear();
     _grossWeightController.clear();
@@ -595,6 +743,10 @@ class _HomePageState extends State<HomePage> {
       _farmer = null;
       _slipBytes = null;
       _slipName = '';
+      _ocrText = '';
+      _ocrError = '';
+      _slipDraft = null;
+      _ocrRunning = false;
     });
   }
 
@@ -974,6 +1126,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   validator: (value) {
                     final digits = value?.replaceAll(RegExp(r'\D'), '') ?? '';
+                    if (digits.isEmpty) return null;
                     if (digits.length < 10 || digits.length > 15) {
                       return 'Enter a valid mobile number';
                     }
@@ -1021,8 +1174,8 @@ class _HomePageState extends State<HomePage> {
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.search_rounded),
                         hintText: _label(
-                          'Search farmer mobile',
-                          'రైతు మొబైల్‌తో వెతకండి',
+                          'Search farmer name or mobile',
+                          'రైతు పేరు లేదా మొబైల్‌తో వెతకండి',
                         ),
                         suffixIcon: _farmer == null
                             ? null
@@ -1062,10 +1215,12 @@ class _HomePageState extends State<HomePage> {
                     ),
                     title: Text(farmer.name),
                     subtitle: Text(
-                      '${farmer.mobile}${farmer.village.isEmpty ? '' : '  ·  ${farmer.village}'}',
+                      '${farmer.mobile.isEmpty ? 'Mobile not provided' : farmer.mobile}${farmer.village.isEmpty ? '' : '  ·  ${farmer.village}'}',
                     ),
                     onTap: () {
-                      _phoneController.text = farmer.mobile;
+                      _phoneController.text = farmer.mobile.isEmpty
+                          ? farmer.name
+                          : farmer.mobile;
                       setState(() => _farmer = farmer);
                     },
                   ),
@@ -1074,7 +1229,7 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 10),
                 Text(
                   _label(
-                    'No saved farmer found. Add this farmer to continue.',
+                    'No saved farmer found. Add this farmer to continue. Mobile is optional.',
                     'రైతు వివరాలు లేవు. కొనసాగడానికి రైతును జోడించండి.',
                   ),
                   style: const TextStyle(
@@ -1112,11 +1267,16 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               Text(
-                '${farmer.mobile}${farmer.village.isEmpty ? '' : '  ·  ${farmer.village}'}',
+                '${farmer.mobile.isEmpty ? 'Mobile not provided' : farmer.mobile}${farmer.village.isEmpty ? '' : '  ·  ${farmer.village}'}',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF5D6F64)),
               ),
             ],
           ),
+        ),
+        IconButton(
+          onPressed: _addFarmer,
+          icon: const Icon(Icons.edit_outlined),
+          tooltip: 'Edit farmer details',
         ),
         IconButton(
           onPressed: () => setState(() => _farmer = null),
@@ -1533,60 +1693,183 @@ class _HomePageState extends State<HomePage> {
   );
 
   Widget _photoPanel() => _panel(
-    child: Row(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 62,
-          height: 62,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F3EC),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: _slipBytes == null
-              ? const Icon(Icons.receipt_long_rounded, size: 27, color: _green)
-              : Image.memory(_slipBytes!, fit: BoxFit.cover),
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _slipBytes == null
-                    ? _label('Slip photo optional', 'స్లిప్ ఫోటో ఐచ్ఛికం')
-                    : _slipName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
+        Row(
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F3EC),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: _slipBytes == null
+                  ? const Icon(
+                      Icons.receipt_long_rounded,
+                      size: 27,
+                      color: _green,
+                    )
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(_slipBytes!, fit: BoxFit.cover),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Material(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: _ocrRunning ? null : _removeSlipPhoto,
+                              child: const Padding(
+                                padding: EdgeInsets.all(3),
+                                child: Icon(Icons.close, size: 16, color: _ink),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _slipBytes == null
+                        ? _label('Slip photo optional', 'స్లిప్ ఫోటో ఐచ్ఛికం')
+                        : _slipName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _label(
+                      'Photo and text stay on this device',
+                      'ఫోటో మరియు వచనం ఈ పరికరంలోనే ఉంటాయి',
+                    ),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF758078),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _ocrRunning ? null : _pickSlip,
+              icon: const Icon(Icons.camera_alt_outlined, size: 18),
+              label: Text(_label('Take photo', 'ఫోటో తీయండి')),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _green,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                _label(
-                  'Stored with the offline weighment',
-                  'ఆఫ్‌లైన్ తూకంతో భద్రపరచబడుతుంది',
-                ),
-                style: const TextStyle(fontSize: 11, color: Color(0xFF758078)),
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              onPressed: _ocrRunning
+                  ? null
+                  : () => _pickSlip(ImageSource.gallery),
+              tooltip: _label('Choose existing photo', 'ఉన్న ఫోటోను ఎంచుకోండి'),
+              icon: const Icon(Icons.photo_library_outlined, color: _green),
+            ),
+          ],
         ),
-        OutlinedButton.icon(
-          onPressed: _pickSlip,
-          icon: const Icon(Icons.camera_alt_outlined, size: 18),
-          label: Text(_label('Take photo', 'ఫోటో తీయండి')),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _green,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+        if (_ocrRunning) ...[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(),
+          const SizedBox(height: 6),
+          Text(
+            _label(
+              'Reading slip on this phone…',
+              'ఈ ఫోన్‌లో స్లిప్ చదువుతోంది…',
             ),
           ),
-        ),
+        ],
+        if (_ocrError.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(_ocrError, style: const TextStyle(color: Color(0xFF9A5A00))),
+        ],
+        if (_slipBytes != null && !_ocrRunning) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _removeSlipPhoto,
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: Text(_label('Remove photo', 'ఫోటో తొలగించండి')),
+            ),
+          ),
+        ],
+        if (_ocrText.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F3EC),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _label(
+                    'Recognized text — check it against the slip',
+                    'గుర్తించిన వచనాన్ని స్లిప్‌తో సరిపోల్చండి',
+                  ),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _green,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: SingleChildScrollView(child: SelectableText(_ocrText)),
+                ),
+                if (_slipDraft != null) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      FilledButton.icon(
+                        key: const ValueKey('fill-slip-entries-button'),
+                        onPressed: () => _applySlipDraft(_slipDraft!),
+                        icon: const Icon(
+                          Icons.drive_file_move_outline,
+                          size: 18,
+                        ),
+                        label: Text(_label('Fill entries', 'వివరాలు నింపండి')),
+                      ),
+                      Text(
+                        _slipDraft!.bagWeights.isEmpty
+                            ? 'Check all suggested values after filling.'
+                            : '${_slipDraft!.bagWeights.length} bag weights detected; check them after filling.',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF758078),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ],
     ),
   );
-
   Widget _saveButton() => FilledButton.icon(
     onPressed: _saving ? null : _saveWeighment,
     icon: _saving
